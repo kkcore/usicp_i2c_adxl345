@@ -29,22 +29,25 @@ ARCHITECTURE behavioral OF main_main_sch_tb IS
    COMPONENT main
    PORT( SDA	:	INOUT	STD_LOGIC; 
           SCL	:	INOUT	STD_LOGIC; 
-          Clk	:	IN	STD_LOGIC);
+          Clk	:	IN	STD_LOGIC;
+			 Reset : IN STD_LOGIC);
    END COMPONENT;
 
    SIGNAL SDA	:	STD_LOGIC;
    SIGNAL SCL	:	STD_LOGIC;
    SIGNAL Clk	:	STD_LOGIC := '0';
-
+	SIGNAL Reset : STD_LOGIC := '0';
+	
 	constant period : time := 20ns;
 	signal waiter : STD_LOGIC := '1';
-	
+
 BEGIN
 
    UUT: main PORT MAP(
 		SDA => SDA, 
 		SCL => SCL, 
-		Clk => Clk
+		Clk => Clk,
+		Reset => Reset
    );
 
 	-- Clock process

@@ -34,6 +34,8 @@ entity I2C_Driver is
     Port ( Busy : in  STD_LOGIC;
            FIFO_DO : in  STD_LOGIC_VECTOR (7 downto 0);
            Clk : in  STD_LOGIC;
+			  Reset : in STD_LOGIC;
+			  FIFO_Empty : in STD_LOGIC;
            FIFO_DI : out  STD_LOGIC_VECTOR (7 downto 0);
            FIFO_PUSH : out  STD_LOGIC;
            FIFO_POP : out  STD_LOGIC;
@@ -59,17 +61,21 @@ clock_process: process(Clk)
 variable odr_counter: integer := 0;
 begin
 	if rising_edge(Clk) then
---		if state = data_reading or state = writing_data_register_pending or state = writing_bw_data_pending then
---			if odr_counter < 1000000 then
---				odr_counter := odr_counter + 1;
---				state <= state;
---			else
---				odr_counter := 0;
---				state <= next_state;
---			end if;
---		else
-			state <= next_state;
---		end if;
+		if Reset = '1' then
+			state <= start_state;
+		else
+	--		if state = data_reading or state = writing_data_register_pending or state = writing_bw_data_pending then
+	--			if odr_counter < 1000000 then
+	--				odr_counter := odr_counter + 1;
+	--				state <= state;
+	--			else
+	--				odr_counter := 0;
+	--				state <= next_state;
+	--			end if;
+	--		else
+				state <= next_state;
+	--		end if;
+		end if;
 	end if;
 end process clock_process;
 
