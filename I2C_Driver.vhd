@@ -49,7 +49,6 @@ architecture Behavioral of I2C_Driver is
 type state_type is (start_state, start_data_register_state, push_data_register_to_fifo, start_writing_data_register, writing_data_register_pending, data_reading,
 end_data_register_writing, pop_data_byte, end_state, push_bw_rate_to_fifo, push_bw_data_to_fifo, start_writing_bw_data, writing_bw_data_pending, end_bw_data_writing);
 signal state, next_state: state_type;
-signal fifo_counter: std_logic_vector (3 downto 0) := x"0";
 
 begin
 -- Rejestrować na DATAX, DATAY, DATAZ, dodać DATA_READY która ma być impulsem i ma przyjmować '1' po zaktualizowaniu rejestrów
@@ -80,16 +79,8 @@ begin
 end process clock_process;
 
 
-fifo_counter_process: process(Clk, state, fifo_counter)
-begin
-	if rising_edge(Clk) and state = pop_data_byte and fifo_counter < x"6" then
-		fifo_counter <= std_logic_vector( unsigned(fifo_counter) + 1 );
---	elsif fifo_counter = x"6" then
---		fifo_counter <= x"0";
-	end if;
-end process fifo_counter_process;
 
-state_process: process(state, Busy, fifo_counter )
+state_process: process(state, Busy, FIFO_Empty )
 begin
 	case state is
 		when start_state =>
@@ -150,10 +141,10 @@ begin
 			end if;
 						
 		when pop_data_byte =>
-			if fifo_counter < x"6" then
-				next_state <= pop_data_byte;
-			else
+			if FIFO_Empty = '1' then
 				next_state <= end_state;
+			else
+				next_state <= pop_data_byte;
 			end if;
 		
 		when end_state =>
