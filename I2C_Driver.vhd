@@ -42,6 +42,10 @@ entity I2C_Driver is
            ReadCnt : out  STD_LOGIC_VECTOR (3 downto 0);
            Address : out  STD_LOGIC_VECTOR (7 downto 0);
 			  DATA_OUT : out STD_LOGIC_VECTOR (7 downto 0);
+			  DATA_X : out STD_LOGIC_VECTOR (15 downto 0);
+			  DATA_Y : out STD_LOGIC_VECTOR (15 downto 0);
+			  DATA_Z : out STD_LOGIC_VECTOR (15 downto 0);
+			  DATA_READY : out STD_LOGIC;
            Go : out  STD_LOGIC);
 end I2C_Driver;
 
@@ -49,7 +53,7 @@ architecture Behavioral of I2C_Driver is
 type state_type is (start_state, start_data_register_state, push_data_register_to_fifo, start_writing_data_register, writing_data_register_pending, data_reading,
 end_data_register_writing, pop_data_byte, end_state, push_bw_rate_to_fifo, push_bw_data_to_fifo, start_writing_bw_data, writing_bw_data_pending, end_bw_data_writing);
 signal state, next_state: state_type;
-
+signal fifo_counter: std_logic_vector (3 downto 0) := x"0";
 begin
 -- Rejestrować na DATAX, DATAY, DATAZ, dodać DATA_READY która ma być impulsem i ma przyjmować '1' po zaktualizowaniu rejestrów
 -- Zliczanie cyknięć zegaru 50Mhz w procesie 'waiting_state' a nie po prostu inkrementowanie w for loop - done?
@@ -78,7 +82,14 @@ begin
 	end if;
 end process clock_process;
 
-
+fifo_counter_process: process(Clk, state, fifo_counter)
+begin
+	if rising_edge(Clk) and state = pop_data_byte and next_state /= end_state and fifo_counter < x"6" then
+		fifo_counter <= std_logic_vector( unsigned(fifo_counter) + 1 );
+	elsif rising_edge(Clk) and fifo_counter = x"6" then
+		fifo_counter <= x"0";
+	end if;
+end process fifo_counter_process;
 
 state_process: process(state, Busy, FIFO_Empty )
 begin
@@ -148,7 +159,7 @@ begin
 			end if;
 		
 		when end_state =>
-			next_state <= end_state;
+			next_state <= start_data_register_state;
 			
 	end case;
 end process state_process;
@@ -188,5 +199,15 @@ FIFO_POP <= '1' when state = pop_data_byte else '0';
 
 DATA_OUT <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte;
 
+DATA_X(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"0";
+DATA_X(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"1";
+DATA_Y(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"2";
+DATA_Y(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"3";
+DATA_Z(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"4";
+DATA_Z(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"5";
+
+DATA_READY <= '1' when falling_edge(Clk) and state = end_state else '0';
+
 end Behavioral;
+
 
