@@ -41,7 +41,6 @@ entity I2C_Driver is
            FIFO_POP : out  STD_LOGIC;
            ReadCnt : out  STD_LOGIC_VECTOR (3 downto 0);
            Address : out  STD_LOGIC_VECTOR (7 downto 0);
-			  DATA_OUT : out STD_LOGIC_VECTOR (7 downto 0);
 			  DATA_X : out STD_LOGIC_VECTOR (15 downto 0);
 			  DATA_Y : out STD_LOGIC_VECTOR (15 downto 0);
 			  DATA_Z : out STD_LOGIC_VECTOR (15 downto 0);
@@ -51,15 +50,11 @@ end I2C_Driver;
 
 architecture Behavioral of I2C_Driver is
 type state_type is (start_state, start_data_register_state, push_data_register_to_fifo, start_writing_data_register, writing_data_register_pending, data_reading,
-end_data_register_writing, pop_data_byte, end_state, push_bw_rate_to_fifo, push_bw_data_to_fifo, start_writing_bw_data, writing_bw_data_pending, end_bw_data_writing);
+end_data_register_writing, pop_data_byte, end_state, push_bw_rate_to_fifo, push_bw_data_to_fifo, start_writing_bw_data, writing_bw_data_pending, wait_after_bw_data_writing,
+wait_after_data_reading, wait_after_data_register_writing);
 signal state, next_state: state_type;
 signal fifo_counter: std_logic_vector (3 downto 0) := x"0";
 begin
--- Rejestrować na DATAX, DATAY, DATAZ, dodać DATA_READY która ma być impulsem i ma przyjmować '1' po zaktualizowaniu rejestrów
--- Zliczanie cyknięć zegaru 50Mhz w procesie 'waiting_state' a nie po prostu inkrementowanie w for loop - done?
--- Sprawdzenie w docsach ADXL czy trzeba cokolwiek konfigurować oprócz tego jednego rejestru
--- Odczytywanie kolejnych 6 bajtów po odczytaniu pierwszym
--- Nie ma z jakiegoś powodu STOP Condition po odczytaniu 6  bajtów, a musi być
 clock_process: process(Clk)
 variable odr_counter: integer := 0;
 begin
@@ -67,30 +62,46 @@ begin
 		if Reset = '1' then
 			state <= start_state;
 		else
-	--		if state = data_reading or state = writing_data_register_pending or state = writing_bw_data_pending then
-	--			if odr_counter < 1000000 then
-	--				odr_counter := odr_counter + 1;
-	--				state <= state;
-	--			else
-	--				odr_counter := 0;
-	--				state <= next_state;
-	--			end if;
-	--		else
+			if state = wait_after_data_reading or state = wait_after_data_register_writing or state = wait_after_bw_data_writing then
+				if odr_counter < 1000000 then
+					odr_counter := odr_counter + 1;
+					state <= state;
+				else
+					odr_counter := 0;
+					state <= next_state;
+				end if;
+			else
 				state <= next_state;
-	--		end if;
+			end if;
 		end if;
 	end if;
 end process clock_process;
 
 fifo_counter_process: process(Clk, state, fifo_counter)
 begin
-	if rising_edge(Clk) and state = pop_data_byte and next_state /= end_state and fifo_counter < x"6" then
-		fifo_counter <= std_logic_vector( unsigned(fifo_counter) + 1 );
-	elsif rising_edge(Clk) and fifo_counter = x"6" then
-		fifo_counter <= x"0";
+	if rising_edge(Clk) then
+		if state = pop_data_byte and next_state /= end_state and fifo_counter < x"6" then
+			fifo_counter <= std_logic_vector( unsigned(fifo_counter) + 1 );
+		elsif state = end_state then
+			fifo_counter <= x"0";
+		end if;
 	end if;
 end process fifo_counter_process;
 
+--fifo_counter_process: process(Clk, state, fifo_counter)
+--begin
+--	if rising_edge(Clk) and state = pop_data_byte and next_state /= end_state and fifo_counter < x"6" then
+--		fifo_counter <= std_logic_vector( unsigned(fifo_counter) + 1 );
+--	elsif rising_edge(Clk) and fifo_counter = x"6" then
+--		fifo_counter <= x"0";
+--	end if;
+--end process fifo_counter_process;
+
+--	if state = data_reading or state = writing_data_register_pending or state = writing_bw_data_pending then
+
+-- wait_after_data_register_writing (przed end_data_register_writing- nowy stan)
+-- wait_after_data_reading (nowy po data_reading)
+-- wait_after_bw_data_writing -> wait_after_bw_data_writing
 state_process: process(state, Busy, FIFO_Empty )
 begin
 	case state is
@@ -112,12 +123,12 @@ begin
 		
 		when writing_bw_data_pending =>
 			if Busy = '0' then
-				next_state <= end_bw_data_writing;
+				next_state <= wait_after_bw_data_writing;
 			else
 				next_state <= writing_bw_data_pending;
 			end if;
 		
-		when end_bw_data_writing =>
+		when wait_after_bw_data_writing =>
 			next_state <= start_data_register_state;
 			
 		when start_data_register_state =>
@@ -136,21 +147,27 @@ begin
 			
 		when writing_data_register_pending =>
 			if Busy = '0' then
-				next_state <= end_data_register_writing;
+				next_state <= wait_after_data_register_writing;
 			else
 				next_state <= writing_data_register_pending;
 			end if;
+		
+		when wait_after_data_register_writing =>
+			next_state <= end_data_register_writing;
 			
 		when end_data_register_writing =>
 			next_state <= data_reading;
 			
 		when data_reading =>
 			if Busy = '0' then
-				next_state <= pop_data_byte;
+				next_state <= wait_after_data_reading;
 			else
 				next_state <= data_reading;
 			end if;
-						
+		
+		when wait_after_data_reading =>
+			next_state <= pop_data_byte;
+			
 		when pop_data_byte =>
 			if FIFO_Empty = '1' then
 				next_state <= end_state;
@@ -174,7 +191,7 @@ Address <= x"3A"
 				or state = push_bw_data_to_fifo
 				or state = start_writing_bw_data
 				or state = writing_bw_data_pending
-				or state = end_bw_data_writing
+				or state = wait_after_bw_data_writing
 				else x"3B" 
 				when state = end_data_register_writing
 				or state = data_reading
@@ -184,7 +201,7 @@ FIFO_PUSH <= '1' when state = push_data_register_to_fifo or state = push_bw_rate
 
 FIFO_DI <= x"2C" when state = start_state 
 						or state = push_bw_rate_to_fifo 
-						else x"14"
+						else x"14" -- zmiana do ODR 800Hz bo I2C_Master jest w trybie 14 
 						when state = push_bw_data_to_fifo
 						else x"27";
 						
@@ -197,8 +214,6 @@ Go <= '1' when state = start_writing_data_register
 				
 FIFO_POP <= '1' when state = pop_data_byte else '0';
 
-DATA_OUT <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte;
-
 DATA_X(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"0";
 DATA_X(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"1";
 DATA_Y(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"2";
@@ -206,7 +221,7 @@ DATA_Y(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte a
 DATA_Z(7 downto 0) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"4";
 DATA_Z(15 downto 8) <= FIFO_DO when rising_edge(Clk) and state = pop_data_byte and fifo_counter = x"5";
 
-DATA_READY <= '1' when falling_edge(Clk) and state = end_state else '0';
+DATA_READY <= '1' when state = end_state else '0';
 
 end Behavioral;
 
